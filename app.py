@@ -39,6 +39,7 @@ DAILY_FILE = (
 )
 
 MONTHLY_FILE = (
+    
     BASE_DIR /
     "서울교통공사_월별 승하차인원_20251231.csv"
 )
@@ -333,24 +334,40 @@ menu = st.sidebar.radio(
     ]
 )
 
-st.sidebar.markdown("---")
+
+
 
 # ============================================================
-# 분석 기간
-# ============================================================
-
 # 일별통계: 2025년 01월 ~ 05월
+# ============================================================
+
 daily_start = pd.Timestamp("2025-01-01")
 daily_end = pd.Timestamp("2025-05-31")
 
+daily = daily[
+    (daily[daily_date_col] >= daily_start) &
+    (daily[daily_date_col] <= daily_end)
+].copy()
+
+
+# ============================================================
 # 월별통계: 2025년 01월 ~ 12월
+# ============================================================
+
 monthly_start = pd.Timestamp("2025-01-01")
 monthly_end = pd.Timestamp("2025-12-31")
 
+monthly = monthly[
+    (monthly[monthly_date_col] >= monthly_start) &
+    (monthly[monthly_date_col] <= monthly_end)
+].copy()
+
 
 # ============================================================
-# 사이드바에 분석 기간 표시
+# 사이드바 분석 기간 표시
 # ============================================================
+
+st.sidebar.markdown("---")
 
 st.sidebar.write("### 📅 분석 기간")
 
@@ -363,7 +380,6 @@ st.sidebar.write(
     f"월별통계: {monthly_start:%Y-%m} ~ "
     f"{monthly_end:%Y-%m}"
 )
-
 
 
 
@@ -776,9 +792,8 @@ elif menu == "출퇴근 이용량":
     st.title("💼 출퇴근 시간대 이용량")
 
     st.info(
-        "출근: 07시 ~ 09시 / "
-        "퇴근: 17시 ~ 19시"
-    
+        "출근: 07시~09시 / "
+        "퇴근: 17시~19시"
     )
 
     top10 = commute_usage.head(10)
@@ -1003,3 +1018,4 @@ st.sidebar.caption(
 st.sidebar.caption(
     "🚇 Seoul Subway Analysis Dashboard"
 )
+
