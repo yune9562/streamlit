@@ -4,6 +4,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from pathlib import Path
 
+
 # ============================================================
 # 1. Streamlit 기본 설정
 # ============================================================
@@ -14,6 +15,7 @@ st.set_page_config(
     layout="wide"
 )
 
+
 # ============================================================
 # 2. 한글 폰트
 # ============================================================
@@ -21,9 +23,10 @@ st.set_page_config(
 try:
     import koreanize_matplotlib
 except ImportError:
-    pass
+    koreanize_matplotlib = None
 
 plt.rcParams["axes.unicode_minus"] = False
+
 
 # ============================================================
 # 3. 파일 경로 및 인코딩
@@ -43,17 +46,17 @@ MONTHLY_FILE = (
 
 CSV_ENCODING = "cp949"
 
+
 # ============================================================
 # 4. 분석 기간
 # ============================================================
 
-# 일별통행통계 : 2025년 1월 ~ 12월
 DAILY_START = pd.Timestamp("2025-01-01")
 DAILY_END = pd.Timestamp("2025-12-31")
 
-# 월별 승하차인원 : 2025년 1월 ~ 12월
 MONTHLY_START = pd.Timestamp("2025-01-01")
 MONTHLY_END = pd.Timestamp("2025-12-31")
+
 
 # ============================================================
 # 5. 시간대 컬럼
@@ -77,31 +80,52 @@ COMMUTE_COLS = [
     "19시"
 ]
 
+
 # ============================================================
 # 6. CSV 헤더 / 인코딩 확인
 # ============================================================
 
-def read_csv_header(file_path):
+@st.cache_data(
+    show_spinner=False
+)
+def get_csv_encoding(file_path, file_mtime):
 
     try:
 
-        header = pd.read_csv(
+        pd.read_csv(
             file_path,
             encoding="cp949",
             nrows=0
         )
 
-        encoding = "cp949"
+        return "cp949"
 
     except UnicodeDecodeError:
 
-        header = pd.read_csv(
+        pd.read_csv(
             file_path,
             encoding="euc-kr",
             nrows=0
         )
 
-        encoding = "euc-kr"
+        return "euc-kr"
+
+
+@st.cache_data(
+    show_spinner=False
+)
+def read_csv_header(file_path, file_mtime):
+
+    encoding = get_csv_encoding(
+        file_path,
+        file_mtime
+    )
+
+    header = pd.read_csv(
+        file_path,
+        encoding=encoding,
+        nrows=0
+    )
 
     return header, encoding
 
@@ -110,24 +134,21 @@ def read_csv_header(file_path):
 # 7. 일별 데이터 로딩
 # ============================================================
 
-@st.cache_data(
-    show_spinner="🚇 일별 데이터를 불러오는 중..."
-)
-def load_daily_data():
+def _load_daily_data(
+    daily_file,
+    daily_mtime
+):
 
-    if not DAILY_FILE.exists():
+    if not daily_file.exists():
 
         raise FileNotFoundError(
             f"일별 CSV 파일을 찾을 수 없습니다.\n"
-            f"{DAILY_FILE}"
+            f"{daily_file}"
         )
 
-    # --------------------------------------------------------
-    # 헤더만 먼저 읽기
-    # --------------------------------------------------------
-
     header, encoding = read_csv_header(
-        DAILY_FILE
+        str(daily_file),
+        daily_mtime
     )
 
     available_columns = set(
@@ -172,6 +193,30 @@ def load_daily_data():
     ]
 
     # --------------------------------------------------------
+    # 필수 컬럼 확인
+    # --------------------------------------------------------
+
+    required_basic = [
+        date_col,
+        "역명",
+        "호선",
+        "승하차구분"
+    ]
+
+    missing_basic = [
+        col
+        for col in required_basic
+        if col not in available_columns
+    ]
+
+    if missing_basic:
+
+        raise ValueError(
+            "일별 CSV에 다음 필수 컬럼이 없습니다:\n"
+            + ", ".join(missing_basic)
+        )
+
+    # --------------------------------------------------------
     # 시간대 컬럼 확인
     # --------------------------------------------------------
 
@@ -193,7 +238,7 @@ def load_daily_data():
     # --------------------------------------------------------
 
     daily = pd.read_csv(
-        DAILY_FILE,
+        daily_file,
         encoding=encoding,
         usecols=usecols,
         low_memory=False
@@ -209,16 +254,21 @@ def load_daily_data():
     )
 
     # --------------------------------------------------------
-    # ★ 2025년 1월 1일 ~ 12월 31일 필터링
+    # 2025년 필터
     # --------------------------------------------------------
 
     daily = daily.loc[
-        (daily[date_col] >= DAILY_START) &
-        (daily[date_col] <= DAILY_END)
+        (
+            daily[date_col] >= DAILY_START
+        )
+        &
+        (
+            daily[date_col] <= DAILY_END
+        )
     ].copy()
 
     # --------------------------------------------------------
-    # 문자열 컬럼을 category로 변경
+    # 문자열 컬럼 category
     # --------------------------------------------------------
 
     for col in [
@@ -256,24 +306,21 @@ def load_daily_data():
 # 8. 월별 데이터 로딩
 # ============================================================
 
-@st.cache_data(
-    show_spinner="📅 월별 데이터를 불러오는 중..."
-)
-def load_monthly_data():
+def _load_monthly_data(
+    monthly_file,
+    monthly_mtime
+):
 
-    if not MONTHLY_FILE.exists():
+    if not monthly_file.exists():
 
         raise FileNotFoundError(
             f"월별 CSV 파일을 찾을 수 없습니다.\n"
-            f"{MONTHLY_FILE}"
+            f"{monthly_file}"
         )
 
-    # --------------------------------------------------------
-    # 헤더 확인
-    # --------------------------------------------------------
-
     header, encoding = read_csv_header(
-        MONTHLY_FILE
+        str(monthly_file),
+        monthly_mtime
     )
 
     available_columns = set(
@@ -299,7 +346,7 @@ def load_monthly_data():
     # --------------------------------------------------------
 
     monthly = pd.read_csv(
-        MONTHLY_FILE,
+        monthly_file,
         encoding=encoding,
         usecols=[
             "수송연월",
@@ -352,8 +399,15 @@ def load_monthly_data():
     # --------------------------------------------------------
 
     monthly = monthly.loc[
-        (monthly["수송연월"] >= MONTHLY_START) &
-        (monthly["수송연월"] <= MONTHLY_END)
+        (
+            monthly["수송연월"]
+            >= MONTHLY_START
+        )
+        &
+        (
+            monthly["수송연월"]
+            <= MONTHLY_END
+        )
     ].copy()
 
     # --------------------------------------------------------
@@ -373,17 +427,248 @@ def load_monthly_data():
 
 
 # ============================================================
-# 9. 데이터 로딩
+# 9. 전체 데이터 로딩 + 분석 계산
+#
+# 핵심 최적화
+# ------------------------------------------------------------
+# Streamlit은 위젯을 클릭할 때마다 스크립트를 다시 실행한다.
+#
+# 기존 코드:
+#
+# CSV 읽기
+# ↓
+# groupby
+# ↓
+# sum
+# ↓
+# sort
+# ↓
+# 화면 출력
+#
+# 이 모든 작업을 매번 반복.
+#
+# 현재 코드:
+#
+# 파일 수정시간 확인
+# ↓
+# 캐시된 결과 사용
+#
+# 파일이 실제로 변경된 경우에만 다시 계산.
+# ============================================================
+
+@st.cache_data(
+    show_spinner="🚇 데이터를 분석하는 중..."
+)
+def load_and_prepare_all_data(
+    daily_file,
+    daily_mtime,
+    monthly_file,
+    monthly_mtime
+):
+
+    # --------------------------------------------------------
+    # CSV 로딩
+    # --------------------------------------------------------
+
+    daily, daily_date_col = _load_daily_data(
+        Path(daily_file),
+        daily_mtime
+    )
+
+    monthly = _load_monthly_data(
+        Path(monthly_file),
+        monthly_mtime
+    )
+
+    # --------------------------------------------------------
+    # 데이터 존재 여부
+    # --------------------------------------------------------
+
+    if daily.empty:
+
+        raise ValueError(
+            "2025년 1월~12월에 해당하는 "
+            "일별 데이터가 없습니다."
+        )
+
+    if monthly.empty:
+
+        raise ValueError(
+            "2025년 월별 데이터가 없습니다."
+        )
+
+    # ========================================================
+    # 10. 일일 이용량 계산
+    # ========================================================
+
+    daily["일일이용량"] = (
+        daily[HOUR_COLS]
+        .sum(axis=1)
+        .astype("float32")
+    )
+
+    # ========================================================
+    # 11. 역별·시간대별 이용량
+    # ========================================================
+
+    station_hourly = (
+        daily
+        .groupby(
+            "역명",
+            observed=True
+        )[HOUR_COLS]
+        .sum()
+        .astype("float32")
+    )
+
+    # ========================================================
+    # 12. 역별 총 이용량
+    # ========================================================
+
+    station_total = (
+        station_hourly
+        .sum(axis=1)
+        .sort_values(
+            ascending=False
+        )
+    )
+
+    # ========================================================
+    # 13. 시간대별 이용량
+    # ========================================================
+
+    hourly_usage = (
+        daily[HOUR_COLS]
+        .sum()
+        .astype("float32")
+    )
+
+    # ========================================================
+    # 14. 호선별 이용량
+    # ========================================================
+
+    line_usage = (
+        daily
+        .groupby(
+            [
+                "호선",
+                "승하차구분"
+            ],
+            observed=True
+        )["일일이용량"]
+        .sum()
+        .unstack(
+            fill_value=0
+        )
+    )
+
+    line_total = (
+        line_usage
+        .sum(axis=1)
+        .sort_values(
+            ascending=False
+        )
+    )
+
+    # ========================================================
+    # 15. 출퇴근 이용량
+    # ========================================================
+
+    commute_usage = (
+        daily
+        .groupby(
+            "역명",
+            observed=True
+        )[COMMUTE_COLS]
+        .sum()
+        .sum(axis=1)
+        .sort_values(
+            ascending=False
+        )
+    )
+
+    # ========================================================
+    # 16. 월별 이용량
+    # ========================================================
+
+    monthly_usage = (
+        monthly
+        .groupby(
+            "수송연월"
+        )["승하차인원수"]
+        .sum()
+        .sort_index()
+    )
+
+    return (
+        daily,
+        daily_date_col,
+        monthly,
+        station_hourly,
+        station_total,
+        hourly_usage,
+        line_usage,
+        line_total,
+        commute_usage,
+        monthly_usage
+    )
+
+
+# ============================================================
+# 10. 데이터 로딩 실행
 # ============================================================
 
 try:
 
-    daily, daily_date_col = (
-        load_daily_data()
-    )
+    if not DAILY_FILE.exists():
 
-    monthly = (
-        load_monthly_data()
+        st.error(
+            "❌ 일별 CSV 파일을 찾을 수 없습니다."
+        )
+
+        st.code(
+            str(DAILY_FILE)
+        )
+
+        st.stop()
+
+    if not MONTHLY_FILE.exists():
+
+        st.error(
+            "❌ 월별 CSV 파일을 찾을 수 없습니다."
+        )
+
+        st.code(
+            str(MONTHLY_FILE)
+        )
+
+        st.stop()
+
+    # --------------------------------------------------------
+    # 파일 수정시간
+    #
+    # 파일이 변경됐을 때만 cache가 무효화됨
+    # --------------------------------------------------------
+
+    daily_mtime = DAILY_FILE.stat().st_mtime_ns
+    monthly_mtime = MONTHLY_FILE.stat().st_mtime_ns
+
+    (
+        daily,
+        daily_date_col,
+        monthly,
+        station_hourly,
+        station_total,
+        hourly_usage,
+        line_usage,
+        line_total,
+        commute_usage,
+        monthly_usage
+    ) = load_and_prepare_all_data(
+        str(DAILY_FILE),
+        daily_mtime,
+        str(MONTHLY_FILE),
+        monthly_mtime
     )
 
 except Exception as e:
@@ -398,138 +683,7 @@ except Exception as e:
 
 
 # ============================================================
-# 10. 데이터 존재 여부 확인
-# ============================================================
-
-if daily.empty:
-
-    st.error(
-        "❌ 2025년 1월~12월에 해당하는 "
-        "일별 데이터가 없습니다."
-    )
-
-    st.stop()
-
-
-if monthly.empty:
-
-    st.error(
-        "❌ 2025년 월별 데이터가 없습니다."
-    )
-
-    st.stop()
-
-
-# ============================================================
-# 11. 일일 이용량 계산
-# ============================================================
-
-daily["일일이용량"] = (
-    daily[HOUR_COLS]
-    .sum(axis=1)
-    .astype("float32")
-)
-
-
-# ============================================================
-# 12. 역별·시간대별 이용량
-# ============================================================
-
-station_hourly = (
-    daily
-    .groupby(
-        "역명",
-        observed=True
-    )[HOUR_COLS]
-    .sum()
-)
-
-
-# ============================================================
-# 13. 역별 총 이용량
-# ============================================================
-
-station_total = (
-    station_hourly
-    .sum(axis=1)
-    .sort_values(
-        ascending=False
-    )
-)
-
-
-# ============================================================
-# 14. 시간대별 이용량
-# ============================================================
-
-hourly_usage = (
-    daily[HOUR_COLS]
-    .sum()
-)
-
-
-# ============================================================
-# 15. 호선별 이용량
-# ============================================================
-
-line_usage = (
-    daily
-    .groupby(
-        [
-            "호선",
-            "승하차구분"
-        ],
-        observed=True
-    )["일일이용량"]
-    .sum()
-    .unstack(
-        fill_value=0
-    )
-)
-
-line_total = (
-    line_usage
-    .sum(axis=1)
-    .sort_values(
-        ascending=False
-    )
-)
-
-
-# ============================================================
-# 16. 출퇴근 이용량
-# ============================================================
-
-commute_usage = (
-    daily
-    .groupby(
-        "역명",
-        observed=True
-    )[COMMUTE_COLS]
-    .sum()
-    .sum(axis=1)
-    .sort_values(
-        ascending=False
-    )
-)
-
-
-# ============================================================
-# 17. 월별 이용량
-# ============================================================
-
-monthly_usage = (
-    monthly
-    .groupby(
-        "수송연월"
-    )["승하차인원수"]
-    .sum()
-    .sort_index()
-)
-
-
-# ============================================================
-# 18. 사이드바
+# 11. 사이드바
 # ============================================================
 
 st.sidebar.title(
@@ -588,7 +742,7 @@ st.sidebar.caption(
 
 
 # ============================================================
-# 19. 종합 대시보드
+# 12. 종합 대시보드
 # ============================================================
 
 if menu == "종합 대시보드":
@@ -1055,7 +1209,7 @@ if menu == "종합 대시보드":
 
 
 # ============================================================
-# 20. 역별 이용량
+# 13. 역별 이용량
 # ============================================================
 
 elif menu == "역별 이용량":
@@ -1129,7 +1283,6 @@ elif menu == "역별 이용량":
     ax.spines[
         "right"
     ].set_visible(False
-
     )
 
     ax.set_xlim(
@@ -1170,7 +1323,7 @@ elif menu == "역별 이용량":
 
 
 # ============================================================
-# 21. 시간대별 이용량
+# 14. 시간대별 이용량
 # ============================================================
 
 elif menu == "시간대별 이용량":
@@ -1274,7 +1427,7 @@ elif menu == "시간대별 이용량":
 
 
 # ============================================================
-# 22. 호선별 이용량
+# 15. 호선별 이용량
 # ============================================================
 
 elif menu == "호선별 이용량":
@@ -1374,7 +1527,7 @@ elif menu == "호선별 이용량":
 
 
 # ============================================================
-# 23. 역별·시간대별 패턴
+# 16. 역별·시간대별 패턴
 # ============================================================
 
 elif menu == "역별·시간대별 패턴":
@@ -1502,7 +1655,7 @@ elif menu == "역별·시간대별 패턴":
 
 
 # ============================================================
-# 24. 출퇴근 이용량
+# 17. 출퇴근 이용량
 # ============================================================
 
 elif menu == "출퇴근 이용량":
@@ -1609,7 +1762,7 @@ elif menu == "출퇴근 이용량":
 
 
 # ============================================================
-# 25. 월별 이용량
+# 18. 월별 이용량
 # ============================================================
 
 elif menu == "월별 이용량":
@@ -1714,7 +1867,7 @@ elif menu == "월별 이용량":
 
 
 # ============================================================
-# 26. 데이터 확인
+# 19. 데이터 확인
 # ============================================================
 
 elif menu == "데이터 확인":
@@ -1758,7 +1911,6 @@ elif menu == "데이터 확인":
             "### 데이터 미리보기"
         )
 
-        # 앞쪽 100개 데이터 표시
         st.dataframe(
             daily.head(100),
             use_container_width=True,
@@ -1827,7 +1979,6 @@ elif menu == "데이터 확인":
             "### 데이터 미리보기"
         )
 
-        # 앞쪽 100개 데이터 표시
         st.dataframe(
             monthly.head(100),
             use_container_width=True,
