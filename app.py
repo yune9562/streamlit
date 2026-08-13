@@ -1430,25 +1430,30 @@ elif menu == "호선별 이용량":
     )
 
     st.subheader(
-        "호선별 총 이용량"
+        "호선별 승차·하차 이용량"
     )
 
+    # 승차 / 하차 데이터를 각각 표시
     line_result = (
-        line_total
+        line_usage
         .reset_index()
     )
 
     line_result.columns = [
         "호선",
-        "총 이용량"
+        "승차",
+        "하차"
     ]
 
+    # 숫자에 천 단위 콤마 표시
     st.dataframe(
-        line_result,
+        line_result.style.format({
+            "승차": "{:,.0f}",
+            "하차": "{:,.0f}"
+        }),
         use_container_width=True,
         hide_index=True
     )
-
 
 # ============================================================
 # 16. 역별·시간대별 패턴
@@ -1652,6 +1657,12 @@ elif menu == "출퇴근 이용량":
         "right"
     ].set_visible(False)
 
+    # X축 1e7 과학적 표기 제거
+    ax.ticklabel_format(
+        style="plain",
+        axis="x"
+    )
+
     ax.set_xlim(
         0,
         chart_max * 1.15
@@ -1678,12 +1689,14 @@ elif menu == "출퇴근 이용량":
         "출퇴근 이용량"
     ]
 
+    # 표의 이용량에 천 단위 콤마 표시
     st.dataframe(
-        result,
+        result.style.format({
+            "출퇴근 이용량": "{:,.0f}"
+        }),
         use_container_width=True,
         hide_index=True
     )
-
 
 # ============================================================
 # 18. 월별 이용량
@@ -1783,8 +1796,11 @@ elif menu == "월별 이용량":
         .dt.strftime("%Y-%m")
     )
 
+    # 승하차 인원에 천 단위 콤마 표시
     st.dataframe(
-        monthly_result,
+        monthly_result.style.format({
+            "승하차 인원": "{:,.0f}"
+        }),
         use_container_width=True,
         hide_index=True
     )
